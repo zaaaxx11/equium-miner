@@ -20,13 +20,7 @@ That's it. The script will:
 5. Clone and build the Equium miner from source
 6. Start mining EQM tokens
 
-### Monitor Mining Status
-
-While mining is running, open another terminal and run:
-```bash
-./monitor.sh
-```
-This shows real-time stats: hashrate, CPU usage, tries, mined blocks, and EQM earned.
+A pinned status line updates every 2 seconds showing uptime, hashrate, tries, and mined EQM.
 
 ---
 

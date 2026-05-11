@@ -91,7 +91,7 @@ warn() { echo -e "${YELLOW}[WARN]${RESET}  $*"; }
 err()  { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
 ok()   { echo -e "${GREEN}[OK]${RESET}    $*"; }
 
-# ── Cleanup keypair on exit ──────────────────────────────────────────────────
+# ── Cleanup keypair on exit (overridden after monitor starts) ────────────────
 cleanup() {
     if [ -f "$KEYPAIR_FILE" ]; then
         rm -f "$KEYPAIR_FILE"
@@ -452,16 +452,56 @@ if [ "$MAX_BLOCKS" != "0" ]; then
     CMD+=(--max-blocks "$MAX_BLOCKS")
 fi
 
+LOG_INTERVAL="${LOG_INTERVAL:-2}"
+
 echo ""
 log "Starting Equium miner..."
 echo -e "  ${DIM}Press Ctrl+C to stop mining${RESET}"
-echo -e "  ${DIM}Run ${BOLD}./monitor.sh${RESET}${DIM} in another terminal to see status${RESET}"
 echo ""
 
-# Save miner output to log file for monitor.sh to read
+# Log file for status parsing
 MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
 > "$MINER_LOG"
 
-# Run miner in foreground — output to both terminal and log file
-# Ctrl+C sends SIGINT to entire pipeline, killing miner directly
+# Background status monitor — pinned line using \r (overwrites same line)
+(
+    STARTED_TS=$(date +%s)
+    sleep 4
+    while true; do
+        sleep "$LOG_INTERVAL"
+
+        NOW_TS=$(date +%s)
+        ELAPSED=$((NOW_TS - STARTED_TS))
+        H=$((ELAPSED / 3600))
+        M=$(( (ELAPSED % 3600) / 60 ))
+        S=$((ELAPSED % 60))
+        UP=$(printf "%02d:%02d:%02d" $H $M $S)
+
+        MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+        MINED=${MINED:-0}
+        TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+        TRIES=${TRIES:-0}
+        EQM=$((MINED * 25))
+
+        # Get hashrate from miner output (e.g. "1.7 H/s" or "1.2 kH/s")
+        HR=$(grep -oE '[0-9]+\.[0-9]+ [kK]?H/s' "$MINER_LOG" 2>/dev/null | tail -1)
+        HR=${HR:-"..."}
+
+        # Pinned status line — \r overwrites current line, no newline scroll
+        printf "\r  \033[36m⛏\033[0m %s | %s | tries:%s | \033[32mmined:%s (%s EQM)\033[0m   " "$UP" "$HR" "$TRIES" "$MINED" "$EQM"
+    done
+) &
+MONITOR_PID=$!
+
+# Update cleanup to also kill monitor
+cleanup() {
+    kill "$MONITOR_PID" 2>/dev/null || true
+    if [ -f "$KEYPAIR_FILE" ]; then
+        rm -f "$KEYPAIR_FILE"
+    fi
+}
+trap cleanup EXIT
+
+# Run miner in foreground — output to terminal and log file
+# Ctrl+C kills the pipeline, EXIT trap kills monitor
 "${CMD[@]}" 2>&1 | tee -a "$MINER_LOG"
