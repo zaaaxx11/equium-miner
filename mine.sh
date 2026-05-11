@@ -463,30 +463,37 @@ echo -e "  ${DIM}Press Ctrl+C to stop mining${RESET}"
 echo -e "  ${DIM}Status log every ${LOG_INTERVAL}s${RESET}"
 echo ""
 
-# Run miner in background, tee output to a log file for monitoring
+# Run miner — output to log file, tail for display
 MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
 > "$MINER_LOG"
 
-"${CMD[@]}" > >(tee "$MINER_LOG") 2>&1 &
+# Start miner writing to log file
+"${CMD[@]}" >> "$MINER_LOG" 2>&1 &
 MINER_PID=$!
 
-# Forward signals to miner — kill process tree
+# Display miner output in real-time
+tail -f "$MINER_LOG" &
+TAIL_PID=$!
+
+# Stop everything on Ctrl+C
 stop_miner() {
     echo ""
     log "Stopping miner..."
-    # Kill the miner process and all children
+    kill "$TAIL_PID" 2>/dev/null || true
     kill "$MINER_PID" 2>/dev/null || true
-    # Also kill any equium-miner processes
     pkill -f "equium-miner" 2>/dev/null || true
     sleep 1
-    # Force kill if still running
     kill -9 "$MINER_PID" 2>/dev/null || true
     pkill -9 -f "equium-miner" 2>/dev/null || true
     wait "$MINER_PID" 2>/dev/null || true
+    wait "$TAIL_PID" 2>/dev/null || true
     log "Miner stopped."
     exit 0
 }
 trap stop_miner INT TERM
+
+# Wait for miner to start producing output
+sleep 3
 
 # Periodic status monitor
 STARTED_TS=$(date +%s)
@@ -557,9 +564,12 @@ while kill -0 "$MINER_PID" 2>/dev/null; do
 done
 
 # Miner exited on its own
+kill "$TAIL_PID" 2>/dev/null || true
 wait "$MINER_PID" 2>/dev/null
 EXIT_CODE=$?
 if [ "$EXIT_CODE" -ne 0 ]; then
     err "Miner exited with code $EXIT_CODE"
+    err "Last output:"
+    tail -5 "$MINER_LOG" 2>/dev/null
 fi
 exit "$EXIT_CODE"
