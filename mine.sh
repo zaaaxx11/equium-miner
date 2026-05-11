@@ -484,6 +484,8 @@ trap stop_miner INT TERM
 # Periodic status monitor
 STARTED_TS=$(date +%s)
 LAST_LINE_COUNT=0
+PREV_TRIES=0
+PREV_TS=$STARTED_TS
 
 while kill -0 "$MINER_PID" 2>/dev/null; do
     sleep "$LOG_INTERVAL"
@@ -505,8 +507,32 @@ while kill -0 "$MINER_PID" 2>/dev/null; do
     # Get current round from log
     ROUND=$(grep -o "round #[0-9]*" "$MINER_LOG" 2>/dev/null | tail -1 || echo "round #?")
 
+    # Calculate hashrate (solutions per second based on tries)
+    INTERVAL_SECS=$((NOW_TS - PREV_TS))
+    if [ "$INTERVAL_SECS" -gt 0 ]; then
+        NEW_TRIES=$((TRIES - PREV_TRIES))
+        # Extract latest H/s from miner output if available
+        LATEST_HS=$(grep -oP '[0-9]+\.[0-9]+ H/s' "$MINER_LOG" 2>/dev/null | tail -1 || echo "")
+        if [ -n "$LATEST_HS" ]; then
+            HASHRATE="$LATEST_HS"
+        elif [ "$NEW_TRIES" -gt 0 ] && [ "$ELAPSED" -gt 0 ]; then
+            # Estimate from total tries over total time
+            HR=$(python3 -c "print(f'{${TRIES}/${ELAPSED}:.2f}')" 2>/dev/null || echo "0.00")
+            HASHRATE="${HR} H/s"
+        else
+            HASHRATE="warming up"
+        fi
+    else
+        HASHRATE="warming up"
+    fi
+    PREV_TRIES=$TRIES
+    PREV_TS=$NOW_TS
+
     # CPU usage
     CPU_USAGE=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{printf "%.1f%%", $2+$4}' 2>/dev/null || echo "?%")
+
+    # EQM earned
+    EQM_EARNED=$((MINED * 25))
 
     # Check for new output lines
     CURRENT_LINE_COUNT=$(wc -l < "$MINER_LOG" 2>/dev/null || echo "0")
@@ -518,8 +544,8 @@ while kill -0 "$MINER_PID" 2>/dev/null; do
         STATUS="active"
     fi
 
-    # Print pinned status bar
-    echo -e "  ${CYAN}[STATUS]${RESET} ${DIM}uptime:${RESET}${UPTIME} ${DIM}|${RESET} ${DIM}cpu:${RESET}${CPU_USAGE} ${DIM}|${RESET} ${DIM}${ROUND}${RESET} ${DIM}|${RESET} ${DIM}tries:${RESET}${TRIES} ${DIM}|${RESET} ${GREEN}mined:${RESET}${MINED} ${DIM}|${RESET} ${DIM}[${STATUS}]${RESET}"
+    # Print status bar with hashrate
+    echo -e "  ${CYAN}[STATUS]${RESET} ${DIM}uptime:${RESET}${UPTIME} ${DIM}|${RESET} ${BOLD}hashrate:${RESET}${HASHRATE} ${DIM}|${RESET} ${DIM}cpu:${RESET}${CPU_USAGE} ${DIM}|${RESET} ${DIM}${ROUND}${RESET} ${DIM}|${RESET} ${DIM}tries:${RESET}${TRIES} ${DIM}|${RESET} ${GREEN}mined:${RESET}${MINED} (${EQM_EARNED} EQM) ${DIM}|${RESET} ${DIM}[${STATUS}]${RESET}"
 done
 
 # Miner exited on its own
