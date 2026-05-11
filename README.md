@@ -5,8 +5,8 @@ One-script miner for [Equium](https://github.com/HannaPrints/equium) — a CPU-m
 ## Quick Start
 
 ```bash
-git clone https://github.com/zaaaxx11/equium-miner.git
-cd equium-miner
+git clone https://github.com/zaaaxx11/z.git
+cd z/equium-miner
 
 # Mine with your Solana private key
 PRIVATE_KEY="your_base58_private_key" ./mine.sh
@@ -19,6 +19,14 @@ That's it. The script will:
 4. Check your SOL balance for transaction fees
 5. Clone and build the Equium miner from source
 6. Start mining EQM tokens
+
+### Monitor Mining Status
+
+While mining is running, open another terminal and run:
+```bash
+./monitor.sh
+```
+This shows real-time stats: hashrate, CPU usage, tries, mined blocks, and EQM earned.
 
 ---
 
@@ -41,8 +49,8 @@ brew install git python3 curl
 ### Step 2: Clone Repo
 
 ```bash
-git clone https://github.com/zaaaxx11/equium-miner.git
-cd equium-miner
+git clone https://github.com/zaaaxx11/z.git
+cd z/equium-miner
 chmod +x mine.sh
 ```
 
