@@ -1,0 +1,18 @@
+# Keypair files — NEVER commit private keys
+.miner-keypair.json
+*.keypair
+id.json
+
+# Equium build directory (cloned by the script)
+equium/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
