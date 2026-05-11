@@ -5,7 +5,7 @@ One-script miner for [Equium](https://github.com/HannaPrints/equium) — a CPU-m
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/equium-miner.git
+git clone https://github.com/zaaaxx11/equium-miner.git
 cd equium-miner
 
 # Mine with your Solana private key
@@ -13,10 +13,104 @@ PRIVATE_KEY="your_base58_private_key" ./mine.sh
 ```
 
 That's it. The script will:
-1. Clone and build the Equium miner from source
-2. Convert your private key to the required keypair format
-3. Connect to a public Solana RPC
-4. Start mining EQM tokens
+1. Check all dependencies (Rust, Git, Python3, curl)
+2. Auto-select the fastest public Solana RPC
+3. Convert your private key to the required keypair format
+4. Check your SOL balance for transaction fees
+5. Clone and build the Equium miner from source
+6. Start mining EQM tokens
+
+---
+
+## Panduan Lengkap (Bahasa Indonesia)
+
+### Step 1: Install Dependencies
+
+```bash
+# Install Rust (wajib, untuk compile miner)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Install Git, Python3, curl (biasanya sudah ada)
+# Ubuntu/Debian:
+sudo apt update && sudo apt install -y git python3 curl
+# macOS:
+brew install git python3 curl
+```
+
+### Step 2: Clone Repo
+
+```bash
+git clone https://github.com/zaaaxx11/equium-miner.git
+cd equium-miner
+chmod +x mine.sh
+```
+
+### Step 3: Import Wallet (Private Key)
+
+**Opsi A — Dari Phantom Wallet:**
+1. Buka Phantom → Settings → Security & Privacy → Export Private Key
+2. Copy string base58 (panjang, campuran huruf+angka)
+3. Jalankan:
+```bash
+PRIVATE_KEY="paste_base58_key_disini" ./mine.sh
+```
+
+**Opsi B — Dari Solflare Wallet:**
+1. Buka Solflare → Settings → Export Private Key
+2. Copy string base58
+3. Jalankan sama seperti Opsi A
+
+**Opsi C — Buat Wallet Baru:**
+```bash
+# Install Solana CLI
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+
+# Generate keypair baru (catat address-nya, kirim SOL kesitu)
+solana-keygen new --outfile ~/.config/solana/mining-wallet.json
+
+# Jalankan mining pakai file keypair
+PRIVATE_KEY="$HOME/.config/solana/mining-wallet.json" ./mine.sh
+```
+
+### Step 4: Jalankan Mining
+
+**Paling simpel (auto RPC, semua CPU cores):**
+```bash
+PRIVATE_KEY="private_key_kamu" ./mine.sh
+```
+
+**Pilih RPC sendiri:**
+```bash
+# Gratis — Ankr
+PRIVATE_KEY="key_kamu" RPC_URL="https://rpc.ankr.com/solana" ./mine.sh
+
+# Gratis — dRPC
+PRIVATE_KEY="key_kamu" RPC_URL="https://solana.drpc.org" ./mine.sh
+
+# Recommended — Helius (daftar gratis di helius.dev)
+PRIVATE_KEY="key_kamu" RPC_URL="https://mainnet.helius-rpc.com/?api-key=API_KEY_KAMU" ./mine.sh
+```
+
+**Custom thread + nonce budget (untuk optimasi):**
+```bash
+PRIVATE_KEY="key_kamu" \
+  RPC_URL="https://rpc.ankr.com/solana" \
+  THREADS=4 \
+  MAX_NONCES=32768 \
+  ./mine.sh
+```
+
+### Step 5: Pastikan Ada SOL
+
+Mining butuh sedikit SOL (~0.001 per block) untuk transaction fees. Kirim minimal 0.01 SOL ke address wallet kamu sebelum mulai mining.
+
+### Stop Mining
+
+Tekan `Ctrl+C` untuk berhenti.
+
+---
 
 ## Configuration
 
@@ -25,11 +119,12 @@ All configuration is done via environment variables:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `PRIVATE_KEY` | **Yes** | — | Solana private key (base58 string or path to keypair JSON) |
-| `RPC_URL` | No | `https://api.mainnet-beta.solana.com` | Solana RPC endpoint |
+| `RPC_URL` | No | Auto-select best | Solana RPC endpoint |
 | `THREADS` | No | `0` (all cores) | Number of CPU threads |
 | `MAX_BLOCKS` | No | `0` (unlimited) | Stop after N successful blocks |
 | `CU_LIMIT` | No | `1400000` | Compute-unit limit per transaction |
-| `MAX_NONCES` | No | `4096` | Max nonce attempts per round per thread |
+| `MAX_NONCES` | No | `16384` | Max nonce attempts per round per thread |
+| `REBUILD` | No | `0` | Set to `1` to force rebuild from source |
 
 ## Examples
 
@@ -47,12 +142,13 @@ PRIVATE_KEY="5J3mBbAH58Z..." \
   ./mine.sh
 ```
 
-### With Custom RPC
+### With Custom RPC + Higher Nonce Budget
 
 ```bash
 PRIVATE_KEY="5J3mBbAH58Z..." \
   RPC_URL="https://rpc.ankr.com/solana" \
   THREADS=8 \
+  MAX_NONCES=32768 \
   ./mine.sh
 ```
 
@@ -64,7 +160,7 @@ PRIVATE_KEY="5J3mBbAH58Z..." \
   THREADS=8 \
   MAX_BLOCKS=100 \
   CU_LIMIT=1400000 \
-  MAX_NONCES=8192 \
+  MAX_NONCES=32768 \
   ./mine.sh
 ```
 
@@ -72,6 +168,12 @@ PRIVATE_KEY="5J3mBbAH58Z..." \
 
 ```bash
 PRIVATE_KEY="$HOME/.config/solana/id.json" ./mine.sh
+```
+
+### Force Rebuild
+
+```bash
+PRIVATE_KEY="5J3mBbAH58Z..." REBUILD=1 ./mine.sh
 ```
 
 ## Private Key Input
@@ -110,11 +212,11 @@ PRIVATE_KEY="$HOME/.config/solana/mining-wallet.json" ./mine.sh
 
 ## Public RPC Endpoints
 
-These free public RPCs are available (rate-limited):
+The script auto-selects the fastest RPC if `RPC_URL` is not set. Available:
 
 | Provider | URL | Notes |
 |----------|-----|-------|
-| Solana | `https://api.mainnet-beta.solana.com` | Default, aggressive rate limits |
+| Solana | `https://api.mainnet-beta.solana.com` | Aggressive rate limits |
 | Ankr | `https://rpc.ankr.com/solana` | Good free tier |
 | dRPC | `https://solana.drpc.org` | Decentralized RPC |
 | Helius | `https://mainnet.helius-rpc.com/?api-key=KEY` | Best performance, free key at [helius.dev](https://www.helius.dev) |
@@ -130,16 +232,20 @@ Equium uses **Equihash (96,5)** — a memory-bound proof-of-work algorithm speci
 - This levels the playing field so anyone can mine
 - More CPU threads = more parallelism = more hash attempts per second
 
-To maximize mining performance on CPU:
+### Performance Tips
+
 - Use all available cores: `THREADS=0` (default)
-- Get a reliable RPC with low latency
+- Increase nonce budget to reduce state-refetch overhead: `MAX_NONCES=32768` or `65536`
+- Get a reliable RPC with low latency (Helius recommended)
 - Ensure your system has enough RAM (Equihash is memory-intensive)
+- Use a VPS close to Solana validators for lower tx latency
 
 ## Requirements
 
 - **Rust/Cargo** — [Install Rust](https://rustup.rs)
 - **Git**
 - **Python 3** (for private key conversion)
+- **curl** (for RPC health checks)
 - **SOL** — Small amount (~0.001 SOL per block) for transaction fees
 
 ## How Mining Works
@@ -149,12 +255,14 @@ To maximize mining performance on CPU:
 3. Difficulty auto-adjusts every 60 blocks to maintain ~1 minute block times
 4. Rewards halve over time (25 → 12.5 → 6.25 → ...)
 
-## Security Notes
+## Security Features
 
-- The script creates a temporary keypair file (`.miner-keypair.json`) — keep it secure
+- Keypair file (`.miner-keypair.json`) created with `chmod 600` — only owner can read
+- Keypair file auto-deleted on script exit (trap on EXIT/INT/TERM)
+- Private key passed via `sys.argv`, not shell interpolation (prevents injection)
+- Base58 validation with proper character checking
 - Solutions are bound to your wallet's public key — no front-running possible
-- Never share your private key
-- Add `.miner-keypair.json` to your `.gitignore`
+- `.miner-keypair.json` excluded in `.gitignore`
 
 ## License
 
