@@ -3,6 +3,9 @@
 *.keypair
 id.json
 
+# Miner output log
+.miner-output.log
+
 # Equium build directory (cloned by the script)
 equium/
 

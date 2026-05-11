@@ -19,6 +19,7 @@
 #    CU_LIMIT        Compute-unit limit per tx (default: 1400000)
 #    MAX_NONCES      Max nonce attempts per round per thread (default: 16384)
 #    REBUILD         Set to 1 to force rebuild even if binary exists
+#    LOG_INTERVAL    Status log interval in seconds (default: 2)
 #
 #  EXAMPLES:
 #    # Basic mining with all defaults
@@ -97,8 +98,9 @@ cleanup() {
         rm -f "$KEYPAIR_FILE"
         log "Keypair file cleaned up"
     fi
+    rm -f "${SCRIPT_DIR}/.miner-output.log" 2>/dev/null || true
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
 
 # ── Check dependencies FIRST ───────────────────────────────────────────────
 check_deps() {
@@ -453,9 +455,77 @@ if [ "$MAX_BLOCKS" != "0" ]; then
     CMD+=(--max-blocks "$MAX_BLOCKS")
 fi
 
+LOG_INTERVAL="${LOG_INTERVAL:-2}"
+
 echo ""
 log "Starting Equium miner..."
 echo -e "  ${DIM}Press Ctrl+C to stop mining${RESET}"
+echo -e "  ${DIM}Status log every ${LOG_INTERVAL}s${RESET}"
 echo ""
 
-exec "${CMD[@]}"
+# Run miner in background, tee output to a log file for monitoring
+MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
+> "$MINER_LOG"
+
+"${CMD[@]}" 2>&1 | tee "$MINER_LOG" &
+MINER_PID=$!
+
+# Forward signals to miner
+stop_miner() {
+    echo ""
+    log "Stopping miner (PID: $MINER_PID)..."
+    kill "$MINER_PID" 2>/dev/null || true
+    wait "$MINER_PID" 2>/dev/null || true
+    log "Miner stopped."
+    exit 0
+}
+trap stop_miner INT TERM
+
+# Periodic status monitor
+STARTED_TS=$(date +%s)
+LAST_LINE_COUNT=0
+
+while kill -0 "$MINER_PID" 2>/dev/null; do
+    sleep "$LOG_INTERVAL"
+
+    # Calculate uptime
+    NOW_TS=$(date +%s)
+    ELAPSED=$((NOW_TS - STARTED_TS))
+    HOURS=$((ELAPSED / 3600))
+    MINS=$(( (ELAPSED % 3600) / 60 ))
+    SECS=$((ELAPSED % 60))
+    UPTIME=$(printf "%02d:%02d:%02d" $HOURS $MINS $SECS)
+
+    # Count mined blocks from log
+    MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null || echo "0")
+
+    # Count tries from log
+    TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null || echo "0")
+
+    # Get current round from log
+    ROUND=$(grep -o "round #[0-9]*" "$MINER_LOG" 2>/dev/null | tail -1 || echo "round #?")
+
+    # CPU usage
+    CPU_USAGE=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{printf "%.1f%%", $2+$4}' 2>/dev/null || echo "?%")
+
+    # Check for new output lines
+    CURRENT_LINE_COUNT=$(wc -l < "$MINER_LOG" 2>/dev/null || echo "0")
+
+    if [ "$CURRENT_LINE_COUNT" -eq "$LAST_LINE_COUNT" ]; then
+        STATUS="grinding"
+    else
+        LAST_LINE_COUNT=$CURRENT_LINE_COUNT
+        STATUS="active"
+    fi
+
+    # Print pinned status bar
+    echo -e "  ${CYAN}[STATUS]${RESET} ${DIM}uptime:${RESET}${UPTIME} ${DIM}|${RESET} ${DIM}cpu:${RESET}${CPU_USAGE} ${DIM}|${RESET} ${DIM}${ROUND}${RESET} ${DIM}|${RESET} ${DIM}tries:${RESET}${TRIES} ${DIM}|${RESET} ${GREEN}mined:${RESET}${MINED} ${DIM}|${RESET} ${DIM}[${STATUS}]${RESET}"
+done
+
+# Miner exited on its own
+wait "$MINER_PID" 2>/dev/null
+EXIT_CODE=$?
+if [ "$EXIT_CODE" -ne 0 ]; then
+    err "Miner exited with code $EXIT_CODE"
+fi
+exit "$EXIT_CODE"
