@@ -465,10 +465,11 @@ MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
 
 # Background status monitor — pinned line using \r (overwrites same line)
 (
+    set +eo pipefail
     STARTED_TS=$(date +%s)
     sleep 4
     while true; do
-        sleep "$LOG_INTERVAL"
+        sleep "$LOG_INTERVAL" || break
 
         NOW_TS=$(date +%s)
         ELAPSED=$((NOW_TS - STARTED_TS))
@@ -477,14 +478,16 @@ MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
         S=$((ELAPSED % 60))
         UP=$(printf "%02d:%02d:%02d" $H $M $S)
 
-        MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+        MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null || echo 0)
+        MINED=$(echo "$MINED" | tr -dc '0-9')
         MINED=${MINED:-0}
-        TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+        TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null || echo 0)
+        TRIES=$(echo "$TRIES" | tr -dc '0-9')
         TRIES=${TRIES:-0}
         EQM=$((MINED * 25))
 
         # Get hashrate from miner output (e.g. "1.7 H/s" or "1.2 kH/s")
-        HR=$(grep -oE '[0-9]+\.[0-9]+ [kK]?H/s' "$MINER_LOG" 2>/dev/null | tail -1)
+        HR=$(grep -oE '[0-9]+\.[0-9]+ [kK]?H/s' "$MINER_LOG" 2>/dev/null | tail -1 || true)
         HR=${HR:-"..."}
 
         # Pinned status line — \r overwrites current line, no newline scroll
