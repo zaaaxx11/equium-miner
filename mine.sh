@@ -467,14 +467,21 @@ echo ""
 MINER_LOG="${SCRIPT_DIR}/.miner-output.log"
 > "$MINER_LOG"
 
-"${CMD[@]}" 2>&1 | tee "$MINER_LOG" &
+"${CMD[@]}" > >(tee "$MINER_LOG") 2>&1 &
 MINER_PID=$!
 
-# Forward signals to miner
+# Forward signals to miner — kill process tree
 stop_miner() {
     echo ""
-    log "Stopping miner (PID: $MINER_PID)..."
+    log "Stopping miner..."
+    # Kill the miner process and all children
     kill "$MINER_PID" 2>/dev/null || true
+    # Also kill any equium-miner processes
+    pkill -f "equium-miner" 2>/dev/null || true
+    sleep 1
+    # Force kill if still running
+    kill -9 "$MINER_PID" 2>/dev/null || true
+    pkill -9 -f "equium-miner" 2>/dev/null || true
     wait "$MINER_PID" 2>/dev/null || true
     log "Miner stopped."
     exit 0
@@ -498,26 +505,27 @@ while kill -0 "$MINER_PID" 2>/dev/null; do
     SECS=$((ELAPSED % 60))
     UPTIME=$(printf "%02d:%02d:%02d" $HOURS $MINS $SECS)
 
-    # Count mined blocks from log
-    MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null || echo "0")
+    # Count mined blocks from log (sanitize to integer)
+    MINED=$(grep -c "MINED" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+    MINED=${MINED:-0}
 
-    # Count tries from log
-    TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null || echo "0")
+    # Count tries from log (sanitize to integer)
+    TRIES=$(grep -c "try #" "$MINER_LOG" 2>/dev/null | head -1 | tr -dc '0-9')
+    TRIES=${TRIES:-0}
 
     # Get current round from log
-    ROUND=$(grep -o "round #[0-9]*" "$MINER_LOG" 2>/dev/null | tail -1 || echo "round #?")
+    ROUND=$(grep -o "round #[0-9]*" "$MINER_LOG" 2>/dev/null | tail -1)
+    ROUND=${ROUND:-"round #?"}
 
-    # Calculate hashrate (solutions per second based on tries)
+    # Calculate hashrate
     INTERVAL_SECS=$((NOW_TS - PREV_TS))
-    if [ "$INTERVAL_SECS" -gt 0 ]; then
-        NEW_TRIES=$((TRIES - PREV_TRIES))
+    if [ "$INTERVAL_SECS" -gt 0 ] && [ "$TRIES" -gt 0 ]; then
         # Extract latest H/s from miner output if available
-        LATEST_HS=$(grep -oP '[0-9]+\.[0-9]+ H/s' "$MINER_LOG" 2>/dev/null | tail -1 || echo "")
+        LATEST_HS=$(grep -oE '[0-9]+\.[0-9]+ H/s' "$MINER_LOG" 2>/dev/null | tail -1)
         if [ -n "$LATEST_HS" ]; then
             HASHRATE="$LATEST_HS"
-        elif [ "$NEW_TRIES" -gt 0 ] && [ "$ELAPSED" -gt 0 ]; then
-            # Estimate from total tries over total time
-            HR=$(python3 -c "print(f'{${TRIES}/${ELAPSED}:.2f}')" 2>/dev/null || echo "0.00")
+        elif [ "$ELAPSED" -gt 0 ]; then
+            HR=$(python3 -c "print(f'{int(${TRIES})/int(${ELAPSED}):.2f}')" 2>/dev/null || echo "0.00")
             HASHRATE="${HR} H/s"
         else
             HASHRATE="warming up"
@@ -529,7 +537,7 @@ while kill -0 "$MINER_PID" 2>/dev/null; do
     PREV_TS=$NOW_TS
 
     # CPU usage
-    CPU_USAGE=$(top -bn1 2>/dev/null | grep "Cpu(s)" | awk '{printf "%.1f%%", $2+$4}' 2>/dev/null || echo "?%")
+    CPU_USAGE=$(top -bn1 2>/dev/null | grep -E 'Cpu|%cpu' | head -1 | awk '{printf "%.1f%%", $2+$4}' 2>/dev/null || echo "?%")
 
     # EQM earned
     EQM_EARNED=$((MINED * 25))
